@@ -5,15 +5,25 @@ import axios from "axios";
 import {
   Box, Typography, TextField, Button, Chip,
   CircularProgress, useTheme,
-  useMediaQuery, Alert,
+  useMediaQuery, Alert, Dialog, DialogTitle, DialogContent, DialogActions,
+  MenuItem, FormControlLabel, Switch,
 } from "@mui/material";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import DashboardCustomizeOutlinedIcon from "@mui/icons-material/DashboardCustomizeOutlined";
 import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import CategoryPicker from "../components/CategoryPicker";
 import UploadZone from "../components/UploadZone";
-import { quickRecognize, quickRecognizeVideo, getApiHealth } from "../utils/api";
+import {
+  quickRecognize,
+  quickRecognizeVideo,
+  getApiHealth,
+  getModelConfig,
+  saveModelConfig,
+  type ModelConfig,
+  type ModelConfigPayload,
+} from "../utils/api";
 import {
   diagnoseOpsAccount,
   getOpsState,
@@ -287,6 +297,218 @@ function AccountDebateSummary({
         )}
       </Box>
     </Box>
+  );
+}
+
+const emptyModelConfigForm: ModelConfigPayload = {
+  provider: "openai",
+  base_url: "",
+  wire_api: "chat",
+  api_key: "",
+  model: "",
+  review_model: "",
+  model_reasoning_effort: "",
+  model_fast: "",
+  model_pro: "",
+  model_omni: "",
+  openai_compat: "",
+  skip_json_response_format: false,
+};
+
+function toModelConfigForm(config: ModelConfig | null): ModelConfigPayload {
+  if (!config) return emptyModelConfigForm;
+  return {
+    provider: config.provider || "openai",
+    base_url: config.base_url || "",
+    wire_api: config.wire_api || "chat",
+    api_key: "",
+    model: config.model || "",
+    review_model: config.review_model || config.model || "",
+    model_reasoning_effort: config.model_reasoning_effort || "",
+    model_fast: config.model_fast || config.model || "",
+    model_pro: config.model_pro || config.model || "",
+    model_omni: config.model_omni || config.model || "",
+    openai_compat: config.openai_compat || "",
+    skip_json_response_format: !!config.skip_json_response_format,
+  };
+}
+
+function ModelConfigDialog({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [config, setConfig] = useState<ModelConfig | null>(null);
+  const [form, setForm] = useState<ModelConfigPayload>(emptyModelConfigForm);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const setField = <K extends keyof ModelConfigPayload>(key: K, value: ModelConfigPayload[K]) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    setMessage("");
+    setError("");
+    void getModelConfig()
+      .then((next) => {
+        setConfig(next);
+        setForm(toModelConfigForm(next));
+      })
+      .catch((err: unknown) => setError(getOpsErrorMessage(err)))
+      .finally(() => setLoading(false));
+  }, [open]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setMessage("");
+    setError("");
+    try {
+      const next = await saveModelConfig(form);
+      setConfig(next);
+      setForm(toModelConfigForm(next));
+      setMessage("模型接口已保存，后续诊断会使用这组配置。");
+    } catch (err: unknown) {
+      setError(getOpsErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onClose={saving ? undefined : onClose} fullWidth maxWidth="md">
+      <DialogTitle sx={{ fontWeight: 950, pb: 1 }}>
+        模型接口
+      </DialogTitle>
+      <DialogContent dividers sx={{ bgcolor: "#F8FAFC" }}>
+        <Typography sx={{ fontSize: 12.5, color: textMuted, lineHeight: 1.7, mb: 1.5 }}>
+          这里配置 OpenAI-compatible 或 Responses API 网关。API Key 只写入本机配置文件，不会在界面回显完整内容。
+        </Typography>
+        {loading ? (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, py: 3 }}>
+            <CircularProgress size={18} />
+            <Typography sx={{ fontSize: 13, color: textMuted }}>正在读取模型配置...</Typography>
+          </Box>
+        ) : (
+          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, gap: 1.5 }}>
+            <TextField
+              select
+              label="模型提供商"
+              size="small"
+              value={form.provider}
+              onChange={(e) => setField("provider", e.target.value)}
+            >
+              <MenuItem value="openai">OpenAI-compatible</MenuItem>
+            </TextField>
+            <TextField
+              select
+              label="接口协议"
+              size="small"
+              value={form.wire_api}
+              onChange={(e) => setField("wire_api", e.target.value)}
+            >
+              <MenuItem value="chat">Chat Completions</MenuItem>
+              <MenuItem value="responses">Responses</MenuItem>
+            </TextField>
+            <TextField
+              label="API 接口地址"
+              size="small"
+              value={form.base_url}
+              onChange={(e) => setField("base_url", e.target.value)}
+              placeholder="https://api.example.com/v1"
+              sx={{ gridColumn: { md: "1 / -1" } }}
+            />
+            <TextField
+              label={config?.has_api_key ? `API Key（已配置：${config.api_key_preview}）` : "API Key"}
+              size="small"
+              type="password"
+              value={form.api_key || ""}
+              onChange={(e) => setField("api_key", e.target.value)}
+              placeholder={config?.has_api_key ? "留空则继续使用已保存的 Key" : "粘贴外部模型 API Key"}
+              sx={{ gridColumn: { md: "1 / -1" } }}
+            />
+            <TextField
+              label="默认模型"
+              size="small"
+              value={form.model}
+              onChange={(e) => setField("model", e.target.value)}
+              placeholder="gpt-5.5"
+            />
+            <TextField
+              label="评审模型"
+              size="small"
+              value={form.review_model}
+              onChange={(e) => setField("review_model", e.target.value)}
+              placeholder="gpt-5.5"
+            />
+            <TextField
+              label="快速模型"
+              size="small"
+              value={form.model_fast}
+              onChange={(e) => setField("model_fast", e.target.value)}
+              placeholder="gpt-5.5"
+            />
+            <TextField
+              label="专业模型"
+              size="small"
+              value={form.model_pro}
+              onChange={(e) => setField("model_pro", e.target.value)}
+              placeholder="gpt-5.5"
+            />
+            <TextField
+              label="多模态模型"
+              size="small"
+              value={form.model_omni}
+              onChange={(e) => setField("model_omni", e.target.value)}
+              placeholder="gpt-5.5"
+            />
+            <TextField
+              label="推理强度"
+              size="small"
+              value={form.model_reasoning_effort}
+              onChange={(e) => setField("model_reasoning_effort", e.target.value)}
+              placeholder="xhigh"
+            />
+            <TextField
+              label="兼容标记"
+              size="small"
+              value={form.openai_compat}
+              onChange={(e) => setField("openai_compat", e.target.value)}
+              placeholder="mimo，可留空"
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={form.skip_json_response_format}
+                  onChange={(e) => setField("skip_json_response_format", e.target.checked)}
+                />
+              }
+              label="跳过 JSON response_format"
+              sx={{ alignSelf: "center", m: 0 }}
+            />
+          </Box>
+        )}
+        {config?.config_path && (
+          <Typography sx={{ fontSize: 11, color: textMuted, mt: 1.25 }}>
+            本机配置文件：{config.config_path}
+          </Typography>
+        )}
+        {message && <Alert severity="success" sx={{ mt: 1.5, borderRadius: "8px", fontSize: 12 }}>{message}</Alert>}
+        {error && <Alert severity="error" sx={{ mt: 1.5, borderRadius: "8px", fontSize: 12 }}>{error}</Alert>}
+      </DialogContent>
+      <DialogActions sx={{ px: 3, py: 1.5 }}>
+        <Button onClick={onClose} disabled={saving}>关闭</Button>
+        <Button variant="contained" onClick={handleSave} disabled={loading || saving} sx={{ ...primaryButtonSx, minWidth: 96 }}>
+          {saving ? "保存中..." : "保存接口"}
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 
@@ -596,6 +818,7 @@ export default function Home() {
   const [userEdited, setUserEdited] = useState({ title: false, content: false, category: false });
   /** null=探测中；false=连不上本机 API（多为未启动或 Vite 代理端口不对） */
   const [apiReachable, setApiReachable] = useState<boolean | null>(null);
+  const [modelConfigOpen, setModelConfigOpen] = useState(false);
 
   const uploadPulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const analyzePulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1271,6 +1494,14 @@ export default function Home() {
             </Typography>
           </Box>
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+            <Button
+              size="small"
+              startIcon={<SettingsOutlinedIcon sx={{ fontSize: 14 }} />}
+              onClick={() => setModelConfigOpen(true)}
+              sx={{ ...softButtonSx, bgcolor: "#fff" }}
+            >
+              模型接口
+            </Button>
             <Button size="small" onClick={() => navigate("/ops")} sx={{ ...softButtonSx, bgcolor: "#fff" }}>
               返回管家
             </Button>
@@ -1556,6 +1787,7 @@ export default function Home() {
             </Box>
           </Box>
         </Box>
+        <ModelConfigDialog open={modelConfigOpen} onClose={() => setModelConfigOpen(false)} />
       </Box>
     );
   }
@@ -1606,6 +1838,12 @@ export default function Home() {
           </Typography>
         </Box>
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+          <Button startIcon={<SettingsOutlinedIcon sx={{ fontSize: 14 }} />}
+            onClick={() => setModelConfigOpen(true)} size="small"
+            sx={{ ...softButtonSx, minWidth: "auto", px: 1, bgcolor: "#fff" }}
+          >
+            <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>模型接口</Box>
+          </Button>
           <Button
             onClick={() => { setLeaving(true); setTimeout(() => { window.location.href = "/"; }, 350); }}
             size="small"
@@ -1635,6 +1873,7 @@ export default function Home() {
           </Button>
         </Box>
       </Box>
+      <ModelConfigDialog open={modelConfigOpen} onClose={() => setModelConfigOpen(false)} />
 
       {/* ═══ Work area — 填满剩余空间，桌面不滚动 ═══ */}
       <Box sx={{

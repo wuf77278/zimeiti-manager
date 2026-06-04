@@ -39,6 +39,48 @@ export async function getApiHealth(): Promise<boolean> {
   }
 }
 
+export interface ModelConfig {
+  provider: string;
+  base_url: string;
+  wire_api: "chat" | "responses" | string;
+  has_api_key: boolean;
+  api_key_preview: string;
+  model: string;
+  review_model: string;
+  model_reasoning_effort: string;
+  model_fast: string;
+  model_pro: string;
+  model_omni: string;
+  openai_compat: string;
+  skip_json_response_format: boolean;
+  config_path: string;
+}
+
+export interface ModelConfigPayload {
+  provider: string;
+  base_url: string;
+  wire_api: string;
+  api_key?: string;
+  model: string;
+  review_model: string;
+  model_reasoning_effort: string;
+  model_fast: string;
+  model_pro: string;
+  model_omni: string;
+  openai_compat: string;
+  skip_json_response_format: boolean;
+}
+
+export async function getModelConfig(): Promise<ModelConfig> {
+  const { data } = await api.get<ModelConfig>("/model-config", { timeout: 5000 });
+  return data;
+}
+
+export async function saveModelConfig(payload: ModelConfigPayload): Promise<ModelConfig> {
+  const { data } = await api.post<ModelConfig>("/model-config", payload, { timeout: 8000 });
+  return data;
+}
+
 export interface DiagnoseParams {
   platform?: PlatformKey;
   diagnosisMode?: string;

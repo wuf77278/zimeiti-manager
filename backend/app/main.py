@@ -14,7 +14,10 @@ from fastapi.responses import FileResponse
 from app.api.routes import router as api_router
 from app.config import admin_enabled
 from app import local_memory
+from app.model_config import load_saved_model_config
 from app.paths import baseline_db_path, docs_dir, frontend_dist_dir
+
+load_saved_model_config()
 
 FRONTEND_DIST = str(frontend_dist_dir())
 FRONTEND_INDEX = os.path.join(FRONTEND_DIST, "index.html")

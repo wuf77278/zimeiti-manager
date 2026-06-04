@@ -9,6 +9,7 @@ from app.api.comments_api import router as comments_router
 from app.api.history_api import router as history_router
 from app.api.screenshot_api import router as screenshot_router
 from app.api.optimize_api import router as optimize_router
+from app.api.model_config_api import router as model_config_router
 from app.config import ops_enabled
 
 router = APIRouter()
@@ -27,6 +28,7 @@ router.include_router(comments_router, tags=["comments"])
 # router.include_router(history_router, tags=["history"])
 router.include_router(screenshot_router, tags=["screenshot"])
 router.include_router(optimize_router, tags=["optimize"])
+router.include_router(model_config_router)
 
 if ops_enabled():
     from app.api.ops_api import router as ops_router

@@ -12,6 +12,7 @@ from typing import Optional
 from pathlib import Path
 
 from dotenv import load_dotenv
+from app.model_config import model_config_path
 
 
 def _load_env_files() -> None:
@@ -29,6 +30,7 @@ def _load_env_files() -> None:
     candidates: list[tuple[Path, bool]] = [
         (repo_root / ".env", False),
         (backend_root / ".env", True),
+        (model_config_path(), True),
         (Path.cwd() / ".env", True),
         (Path.cwd().parent / ".env", True),
     ]
@@ -100,6 +102,45 @@ def _get_client():
         base_url=_resolve_openai_base_url(),
         http_client=http_client,
     )
+
+
+def _wire_api() -> str:
+    value = os.getenv("LLM_WIRE_API", "chat").strip().lower()
+    return "responses" if value == "responses" else "chat"
+
+
+def _reasoning_config() -> dict | None:
+    effort = os.getenv("MODEL_REASONING_EFFORT", "").strip()
+    if not effort:
+        return None
+    return {"effort": effort}
+
+
+def _extract_response_text(response) -> str:
+    output_text = getattr(response, "output_text", None)
+    if isinstance(output_text, str) and output_text:
+        return output_text
+    chunks: list[str] = []
+    for item in getattr(response, "output", []) or []:
+        for content in getattr(item, "content", []) or []:
+            text = getattr(content, "text", None)
+            if isinstance(text, str):
+                chunks.append(text)
+    return "\n".join(chunks).strip()
+
+
+def _usage_to_meta(usage, model: str) -> dict | None:
+    if not usage:
+        return None
+    prompt_tokens = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", 0)
+    completion_tokens = getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", 0)
+    total_tokens = getattr(usage, "total_tokens", None) or (prompt_tokens or 0) + (completion_tokens or 0)
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "model": model,
+    }
 
 
 def _normalize_llm_output_for_json(raw: str) -> str:
@@ -226,6 +267,9 @@ class BaseAgent:
 
     async def _call_openai(self, sys_prompt: str, user_message: str, max_tokens: int = 2048) -> dict:
         """OpenAI 兼容调用（含小米 MiMo 等网关的参数与 JSON 模式兼容）。"""
+        if _wire_api() == "responses":
+            return await self._call_openai_responses(sys_prompt, user_message, max_tokens=max_tokens)
+
         messages = [
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": user_message},
@@ -284,19 +328,75 @@ class BaseAgent:
                 logger.warning("LLM 返回顶层非 object: %s", str(raw)[:400])
                 return self._error_response("LLM 返回了非 JSON 对象（应为 {...}）")
             usage = response.usage
-            if usage:
-                result["_meta"] = {
-                    "prompt_tokens": usage.prompt_tokens,
-                    "completion_tokens": usage.completion_tokens,
-                    "total_tokens": usage.total_tokens,
-                    "model": response.model,
-                }
+            meta = _usage_to_meta(usage, response.model)
+            if meta:
+                result["_meta"] = meta
             return result
         except json.JSONDecodeError:
             logger.warning("LLM 原始输出（非 JSON）: %s", (raw or "")[:500])
             return self._error_response("LLM 返回了非 JSON 格式的内容")
         except Exception as e:
             logger.warning("解析 LLM 响应失败: %s", e)
+            return self._error_response(str(e))
+
+    async def _call_openai_responses(self, sys_prompt: str, user_message: str, max_tokens: int = 2048) -> dict:
+        """OpenAI Responses API 调用，兼容 Codex CLI 同类外部网关。"""
+        max_out = max_tokens or int(os.getenv("LLM_MAX_COMPLETION_TOKENS", "2048"))
+        skip_json_mode = os.getenv("LLM_SKIP_JSON_RESPONSE_FORMAT", "").strip() in ("1", "true", "yes")
+
+        async def _create(with_json_object: bool):
+            kwargs = {
+                "model": self.model,
+                "instructions": sys_prompt,
+                "input": user_message,
+                "max_output_tokens": max_out,
+                "store": False,
+            }
+            reasoning = _reasoning_config()
+            if reasoning:
+                kwargs["reasoning"] = reasoning
+            if with_json_object and not skip_json_mode:
+                kwargs["text"] = {"format": {"type": "json_object"}}
+            return await self.client.responses.create(**kwargs)
+
+        response = None
+        last_err: Optional[BaseException] = None
+        attempts: list[bool] = []
+        if not skip_json_mode:
+            attempts.append(True)
+        attempts.append(False)
+        for use_json in attempts:
+            try:
+                response = await _create(with_json_object=use_json)
+                break
+            except Exception as e:
+                last_err = e
+                if use_json and _should_retry_openai_without_json_format(e):
+                    logger.info("Responses 网关可能不支持 JSON format，将不带该参数重试: %s", e)
+                    continue
+                logger.warning("Responses 调用失败: %s", e)
+                return self._error_response(str(e))
+
+        if response is None:
+            return self._error_response(str(last_err) if last_err else "LLM 无响应")
+
+        try:
+            raw = _extract_response_text(response)
+            try:
+                result = json.loads(raw or "")
+            except json.JSONDecodeError:
+                result = _parse_json_from_llm_text(raw)
+            if not isinstance(result, dict):
+                return self._error_response("LLM 返回了非 JSON 对象（应为 {...}）")
+            meta = _usage_to_meta(getattr(response, "usage", None), getattr(response, "model", self.model))
+            if meta:
+                result["_meta"] = meta
+            return result
+        except json.JSONDecodeError:
+            logger.warning("Responses 原始输出（非 JSON）: %s", (_extract_response_text(response) or "")[:500])
+            return self._error_response("LLM 返回了非 JSON 格式的内容")
+        except Exception as e:
+            logger.warning("解析 Responses 响应失败: %s", e)
             return self._error_response(str(e))
 
     async def call_llm_vision(
@@ -309,6 +409,14 @@ class BaseAgent:
         """
         调用多模态模型（MODEL_OMNI）分析图像；image_bytes 须为 JPEG/PNG/WebP 等原始字节。
         """
+        if _wire_api() == "responses":
+            return await self._call_llm_vision_responses(
+                text_message,
+                image_bytes,
+                system_prompt=system_prompt,
+                max_tokens=max_tokens,
+            )
+
         sys_prompt = system_prompt or self.system_prompt
         mimo = _is_mimo_openai_compat()
         max_out = max_tokens or int(os.getenv("LLM_MAX_COMPLETION_TOKENS", "2048"))
@@ -385,6 +493,78 @@ class BaseAgent:
         except Exception as e:
             logger.warning("解析多模态响应失败: %s", e)
             return self._error_response(str(e))
+
+    async def _call_llm_vision_responses(
+        self,
+        text_message: str,
+        image_bytes: bytes,
+        system_prompt: Optional[str] = None,
+        max_tokens: int = 2000,
+    ) -> dict:
+        sys_prompt = system_prompt or self.system_prompt
+        data_url = _bytes_to_image_data_url(image_bytes)
+        max_out = max_tokens or int(os.getenv("LLM_MAX_COMPLETION_TOKENS", "2048"))
+        skip_json_mode = os.getenv("LLM_SKIP_JSON_RESPONSE_FORMAT", "").strip() in ("1", "true", "yes")
+
+        async def _create(with_json_object: bool):
+            kwargs = {
+                "model": MODEL_OMNI,
+                "instructions": sys_prompt,
+                "input": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "input_text", "text": text_message},
+                            {"type": "input_image", "image_url": data_url},
+                        ],
+                    }
+                ],
+                "max_output_tokens": max_out,
+                "store": False,
+            }
+            reasoning = _reasoning_config()
+            if reasoning:
+                kwargs["reasoning"] = reasoning
+            if with_json_object and not skip_json_mode:
+                kwargs["text"] = {"format": {"type": "json_object"}}
+            return await self.client.responses.create(**kwargs)
+
+        response = None
+        last_err: Optional[BaseException] = None
+        attempts: list[bool] = []
+        if not skip_json_mode:
+            attempts.append(True)
+        attempts.append(False)
+        for use_json in attempts:
+            try:
+                response = await _create(with_json_object=use_json)
+                break
+            except Exception as e:
+                last_err = e
+                if use_json and _should_retry_openai_without_json_format(e):
+                    logger.info("Responses 视觉网关可能不支持 JSON format，将不带该参数重试: %s", e)
+                    continue
+                logger.warning("Responses 视觉调用失败: %s", e)
+                return self._error_response(str(e))
+
+        if response is None:
+            return self._error_response(str(last_err) if last_err else "视觉 LLM 无响应")
+
+        raw = _extract_response_text(response)
+        try:
+            result = json.loads(raw or "")
+        except json.JSONDecodeError:
+            try:
+                result = _parse_json_from_llm_text(raw)
+            except json.JSONDecodeError:
+                logger.warning("Responses 视觉原始输出（非 JSON）: %s", raw[:500])
+                return self._error_response("视觉 LLM 返回非 JSON")
+        if not isinstance(result, dict):
+            return self._error_response("视觉 LLM 返回了非 JSON 对象（应为 {...}）")
+        meta = _usage_to_meta(getattr(response, "usage", None), getattr(response, "model", MODEL_OMNI))
+        if meta:
+            result["_meta"] = meta
+        return result
 
     def _error_response(self, error_msg: str) -> dict:
         lower_msg = (error_msg or "").lower()
