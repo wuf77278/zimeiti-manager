@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "自媒体管家桌面端",
   "author": "wuf77278",
   "type": "module",

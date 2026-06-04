@@ -16,7 +16,14 @@ from typing import Optional
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from PIL import Image
 
-from app.agents.base_agent import _get_client, _is_mimo_openai_compat, _parse_json_from_llm_text
+from app.agents.base_agent import (
+    _extract_response_text,
+    _get_client,
+    _is_mimo_openai_compat,
+    _parse_json_from_llm_text,
+    _reasoning_config,
+    _wire_api,
+)
 from app.analysis.mimo_video import build_mimo_video_url_content_part
 from app.analysis.video_stt import transcribe_video_with_whisper
 from app.api.diagnose import (
@@ -292,6 +299,49 @@ async def _vision_call(
     b64 = base64.b64encode(image_bytes).decode("utf-8")
     resolved_model = model or os.getenv("LLM_MODEL_OMNI", "mimo-v2-omni")
     out_cap = max_out_tokens if max_out_tokens is not None else 2048
+    image_url = f"data:{image_mime};base64,{b64}"
+
+    if _wire_api() == "responses":
+        kwargs = {
+            "model": resolved_model,
+            "instructions": prompt,
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": "请分析这张截图。"},
+                        {"type": "input_image", "image_url": image_url},
+                    ],
+                }
+            ],
+            "max_output_tokens": out_cap,
+            "store": False,
+        }
+        reasoning = _reasoning_config()
+        if reasoning:
+            kwargs["reasoning"] = reasoning
+        if os.getenv("LLM_SKIP_JSON_RESPONSE_FORMAT", "").strip().lower() not in {"1", "true", "yes"}:
+            kwargs["text"] = {"format": {"type": "json_object"}}
+        try:
+            resp = await asyncio.wait_for(client.responses.create(**kwargs), timeout=60)
+        except Exception as exc:
+            if "json_object" not in str(exc).lower() and "response_format" not in str(exc).lower():
+                return {"error": f"视觉识别失败: {exc}", "slot_type": "other"}
+            kwargs.pop("text", None)
+            try:
+                resp = await asyncio.wait_for(client.responses.create(**kwargs), timeout=60)
+            except asyncio.TimeoutError:
+                return {"error": "视觉识别超时(60s)", "slot_type": "other"}
+            except Exception as retry_exc:
+                return {"error": f"视觉识别失败: {retry_exc}", "slot_type": "other"}
+        raw = _extract_response_text(resp)
+        try:
+            return json.loads(raw.strip())
+        except json.JSONDecodeError:
+            try:
+                return _parse_json_from_llm_text(raw)
+            except Exception:
+                return {"error": "视觉识别返回非 JSON", "slot_type": "other", "raw_text": raw[:300]}
 
     kwargs = {
         "model": resolved_model,
