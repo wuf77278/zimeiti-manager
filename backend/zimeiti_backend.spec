@@ -13,7 +13,8 @@ project_root = backend_root.parent
 datas = [
     (str(project_root / "frontend" / "dist"), "frontend/dist"),
     (str(project_root / "docs"), "docs"),
-    (str(backend_root / "data"), "backend/data"),
+    (str(backend_root / "data" / "baseline.db"), "backend/data"),
+    (str(backend_root / "data" / "ops_db.json"), "backend/data"),
 ]
 
 hiddenimports = []
