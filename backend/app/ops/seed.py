@@ -1,0 +1,192 @@
+"""Seed data for the operation console."""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from uuid import uuid4
+
+from app.ops.models import Account, AccountMemory, Asset, MetricSnapshot, OperationsDb
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def create_empty_database() -> OperationsDb:
+    return OperationsDb()
+
+
+def create_seed_database() -> OperationsDb:
+    now = now_iso()
+    accounts = [
+        Account(
+            id=str(uuid4()),
+            platform="douyin",
+            displayName="民宿酒店设计抖音号",
+            handle="@homestay-design-lab",
+            status="connected",
+            authType="oauth",
+            profile="民宿酒店设计、空间改造、投资回报、入住体验",
+            memory=AccountMemory(
+                targetAudience=["民宿业主", "酒店投资人", "文旅项目负责人"],
+                contentPillars=["改造前后对比", "房型动线优化", "预算与回报边界", "入住体验细节"],
+                conversionGoal="评论关键词承接设计方案、预算评估和项目咨询",
+                personaTone="专业克制、结果前置、少形容多证据",
+                highPerformingPatterns=["首帧展示改造后结果", "平面图/前后对比", "预算边界和设计理由说清楚"],
+                lowPerformingPatterns=["只放效果图不讲问题", "过度承诺入住率或收益"],
+                avoidTopics=["保证入住率", "无授权客户项目素材", "虚假完工案例", "绝对化投资回报"],
+                commentStrategy="用关键词承接方案、预算、房型和改造避坑问题",
+                privateDomainStrategy="评论关键词后进入人工项目初诊，不在正文强推站外联系方式",
+                updatedAt=now,
+            ),
+            dailyPublishLimit=4,
+            publishedToday=1,
+            sessionHealth="healthy",
+            createdAt=now,
+            updatedAt=now,
+        ),
+        Account(
+            id=str(uuid4()),
+            platform="xiaohongshu",
+            displayName="设计案例小红书号",
+            handle="design-case-notes",
+            status="connected",
+            authType="browser_session",
+            profile="民宿酒店与办公空间设计案例、改造避坑、材料灵感",
+            memory=AccountMemory(
+                targetAudience=["准备装修的民宿业主", "企业行政负责人", "品牌主理人"],
+                contentPillars=["案例拆解", "材料选择", "预算避坑", "设计灵感"],
+                conversionGoal="收藏、评论咨询和私信预约初诊",
+                personaTone="审美克制、细节具体、有项目边界",
+                highPerformingPatterns=["封面明确前后变化", "正文拆问题、做法、预算边界"],
+                lowPerformingPatterns=["只发美图不讲设计逻辑", "案例缺少项目条件"],
+                avoidTopics=["盗用未授权项目图", "虚假案例", "绝对化收益承诺"],
+                updatedAt=now,
+            ),
+            dailyPublishLimit=3,
+            publishedToday=0,
+            sessionHealth="healthy",
+            createdAt=now,
+            updatedAt=now,
+        ),
+        Account(
+            id=str(uuid4()),
+            platform="wechat_channels",
+            displayName="办公空间设计视频号",
+            handle="office-design-channels",
+            status="needs_login",
+            authType="browser_session",
+            profile="办公空间设计、企业接待区、会议区动线、品牌形象落地",
+            memory=AccountMemory(
+                targetAudience=["企业老板", "行政负责人", "品牌/人力负责人"],
+                contentPillars=["办公室动线", "前台与会议区", "企业展厅", "施工落地边界"],
+                conversionGoal="公众号案例、项目初诊和设计咨询预约",
+                personaTone="稳重可信、适合客户转发、少夸张多依据",
+                highPerformingPatterns=["用客户场景开头", "用平面图证明动线", "结尾给项目初诊动作"],
+                lowPerformingPatterns=["只讲效果图不讲业务场景", "只展示漂亮空间不讲落地"],
+                avoidTopics=["虚假客户背书", "过度营销", "保证成交或融资效果"],
+                commentStrategy="评论区承接面积、预算、工期和接待场景问题",
+                privateDomainStrategy="引导公众号案例或项目初诊预约，保留人工确认环节",
+                updatedAt=now,
+            ),
+            dailyPublishLimit=2,
+            publishedToday=0,
+            sessionHealth="expired",
+            createdAt=now,
+            updatedAt=now,
+        ),
+    ]
+    assets = [
+        Asset(
+            id=str(uuid4()),
+            titleBase="老民宿改成高入住率房型的 5 个设计动作",
+            descriptionBase="从老民宿房型、动线、采光、软装和拍照点切入，展示改造前后对比，并说明预算边界与入住体验提升逻辑。",
+            videoUrl="https://example.com/assets/homestay-design.mp4",
+            coverUrl="https://example.com/assets/homestay-design-cover.jpg",
+            tags=["民宿设计", "酒店设计", "空间改造", "设计案例"],
+            durationSeconds=58,
+            owner="设计运营团队",
+            copyrightStatus="owned",
+            createdAt=now,
+            updatedAt=now,
+        ),
+        Asset(
+            id=str(uuid4()),
+            titleBase="办公室前台和会议区这样改，客户第一印象会更稳",
+            descriptionBase="围绕办公空间前台、会议区、洽谈动线和品牌露出做案例拆解，说明客户接待、员工效率和施工落地的取舍。",
+            videoUrl="https://example.com/assets/office-design-review.mp4",
+            coverUrl="https://example.com/assets/office-design-cover.jpg",
+            tags=["办公空间设计", "企业展厅", "会议区动线", "设计咨询"],
+            durationSeconds=76,
+            owner="设计运营团队",
+            copyrightStatus="licensed",
+            createdAt=now,
+            updatedAt=now,
+        ),
+    ]
+    metrics = [
+        MetricSnapshot(
+            id=str(uuid4()),
+            accountId=accounts[0].id,
+            platform="douyin",
+            source="seed",
+            periodDays=7,
+            followers=12840,
+            plays=182000,
+            likes=9300,
+            comments=560,
+            shares=780,
+            avgViewDurationSeconds=18.6,
+            threeSecondRetentionRate=67.0,
+            completionRate=41.0,
+            replayRate=12.0,
+            followConversionRate=1.9,
+            profileVisitRate=4.2,
+            searchImpressionRate=26.0,
+            localTrafficRate=10.0,
+            trafficFieldBreakdown={"hospitality_design": 48.0, "design_search": 26.0, "office_design": 14.0, "lead": 12.0},
+            topContentTags=["民宿设计", "酒店设计", "空间改造"],
+            capturedAt=now,
+        ),
+        MetricSnapshot(
+            id=str(uuid4()),
+            accountId=accounts[1].id,
+            platform="xiaohongshu",
+            source="seed",
+            periodDays=7,
+            followers=7420,
+            plays=64000,
+            likes=4100,
+            comments=290,
+            shares=340,
+            avgViewDurationSeconds=21.2,
+            completionRate=44.0,
+            profileVisitRate=3.4,
+            searchImpressionRate=31.0,
+            topContentTags=["设计案例", "预算避坑", "材料灵感"],
+            capturedAt=now,
+        ),
+        MetricSnapshot(
+            id=str(uuid4()),
+            accountId=accounts[2].id,
+            platform="wechat_channels",
+            source="seed",
+            periodDays=7,
+            followers=3890,
+            plays=31000,
+            likes=1800,
+            comments=120,
+            shares=90,
+            avgViewDurationSeconds=26.4,
+            completionRate=47.0,
+            replayRate=8.0,
+            socialShareRate=6.4,
+            friendLikeRate=11.2,
+            privateDomainClickRate=2.6,
+            officialAccountClickRate=1.5,
+            liveReservationRate=0.7,
+            trafficFieldBreakdown={"social": 52.0, "recommend": 28.0, "private_domain": 12.0, "search": 8.0},
+            topContentTags=["办公空间设计", "企业接待", "项目初诊"],
+            capturedAt=now,
+        ),
+    ]
+    return OperationsDb(accounts=accounts, assets=assets, metrics=metrics)

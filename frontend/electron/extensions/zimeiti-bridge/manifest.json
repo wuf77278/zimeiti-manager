@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "自媒体管家账号桥",
+  "version": "0.1.0",
+  "description": "Connects isolated account browser windows to the local 自媒体管家 ops console.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://creator.douyin.com/*",
+    "https://creator.xiaohongshu.com/*",
+    "https://channels.weixin.qq.com/*",
+    "http://127.0.0.1:8002/*",
+    "http://localhost:8002/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://creator.douyin.com/*",
+        "https://creator.xiaohongshu.com/*",
+        "https://channels.weixin.qq.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

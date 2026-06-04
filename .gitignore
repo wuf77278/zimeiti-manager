@@ -1,0 +1,65 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Build
+frontend/dist/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+release/
+backend/dist/
+backend/build/
+
+# Environment
+.env
+.env.local
+backend/.env
+
+# Python venv
+backend/venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+.claude/
+.playwright-cli/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data
+data/
+backend/data/*.db
+*.sqlite3
+# OpenClaw 式本地记忆目录（含 Markdown 流水与 JSON 副本，默认不提交）
+backend/data/noterx_workspace/
+
+# Logs
+*.log
+npm-debug.log*
+tmp/
+_tmp_*.png
+*.pid
+
+# Test
+test
+
+# Ops local data
+backend/data/ops_db.json
+backend/data/ops_asset_uploads/
+backend/data/temp_videos/
+output/
+migrated/
+account-center-check.png
+
+# Third-party local integration
+integrations/social-auto-upload/
